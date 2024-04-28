@@ -1,16 +1,15 @@
 package testutils
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
-	"strings"
 	"testing"
 
-	"github.com/ory/dockertest/v3"
+	"github.com/docker/go-connections/nat"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/localstack"
 )
 
 var (
@@ -19,58 +18,37 @@ var (
 
 // IntegrationTestRunner is all integration test
 func IntegrationTestRunner(m *testing.M) int {
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
-	pool, err := dockertest.NewPool("")
+	ctx := context.Background()
+
+	container, err := localstack.RunContainer(ctx,
+		testcontainers.WithImage("localstack/localstack:1.4.0"),
+		testcontainers.WithEnv(map[string]string{
+			"SERVICES": "ec2",
+		}),
+	)
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Fatalf("localstack.StartContainer(): %s", err)
 	}
 
-	// pulls an image, creates a container based on it and runs it
-	resource, err := pool.Run("localstack/localstack", "latest", []string{"SERVICES=ec2"})
+	provider, err := testcontainers.NewDockerProvider()
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Fatalf("testcontainers.NewDockerProvider(): %s", err)
 	}
 
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		healthcheckURL := fmt.Sprintf("http://localhost:%s/_localstack/health?reload", resource.GetPort("4566/tcp"))
-		resp, pErr := http.Get(healthcheckURL)
-		if pErr != nil {
-			return fmt.Errorf("failed to GET healthcheck request: %w", pErr)
-		}
-		defer resp.Body.Close()
-		b, pErr := io.ReadAll(resp.Body)
-		if pErr != nil {
-			return fmt.Errorf("failed to read all response body: %w", pErr)
-		}
-
-		type healthResp struct {
-			Services map[string]string `json:"services"`
-		}
-
-		var health healthResp
-		if pErr := json.Unmarshal(b, &health); err != nil {
-			return fmt.Errorf("failed to unmarshal json: %w", pErr)
-		}
-
-		state, ok := health.Services["ec2"]
-		if !ok {
-			return fmt.Errorf("localstack has not ec2 service")
-		}
-		if !strings.EqualFold(state, "available") {
-			return fmt.Errorf("ec2 service is not available: (%s)", state)
-		}
-
-		testEndpoint = fmt.Sprintf("http://localhost:%s", resource.GetPort("4566/tcp"))
-
-		return nil
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+	host, err := provider.DaemonHost(ctx)
+	if err != nil {
+		log.Fatalf("provider.DaemonHost(): %s", err)
 	}
+
+	mappedPort, err := container.MappedPort(ctx, nat.Port("4566/tcp"))
+	if err != nil {
+		log.Fatalf("container.MappedPort(): %s", err)
+	}
+
+	testEndpoint = fmt.Sprintf("http://%s:%d", host, mappedPort.Int())
 
 	testingEnv := map[string]string{
 		"AWS_RESOURCE_TYPE_MAPPING": `{"nano": "c5a.large", "micro": "c5a.xlarge"}`,
-   	"AWS_REGION":                "shoes-aws-testing-region",
 	}
 
 	// rewrite to T.Setenv after Go 1.17
@@ -85,17 +63,8 @@ func IntegrationTestRunner(m *testing.M) int {
 
 	code := m.Run()
 
-	// TODO: reset
-
-	for k, v := range prevEnv {
-		if err := os.Setenv(k, v); err != nil {
-			log.Fatalf("Could not set environment value (key: %q): %+v", k, err)
-		}
-	}
-
-	// You can't defer this because os.Exit doesn't care for defer
-	if err := pool.Purge(resource); err != nil {
-		log.Fatalf("Could not purge resource: %s", err)
+	if err := container.Terminate(ctx); err != nil {
+		log.Fatalf("failed to terminate container: %s", err)
 	}
 
 	return code
