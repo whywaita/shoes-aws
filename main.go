@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -65,7 +66,7 @@ func (p *AWSPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error 
 }
 
 func newServer(ctx context.Context, endpoint string) (*AWS, error) {
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithEndpointResolver(mockEndpointResolver(endpoint)))
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithEndpointResolverWithOptions(mockEndpointResolver(endpoint)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load SDK config: %w", err)
 	}
@@ -222,20 +223,21 @@ func readResourceTypeMapping(env string) (map[pb.ResourceType]string, error) {
 }
 
 // mockEndpointResolver set endpoint to localhost localstack for testing.
-func mockEndpointResolver(endpoint string) aws.EndpointResolverFunc {
-	return aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+func mockEndpointResolver(endpoint string) aws.EndpointResolverWithOptionsFunc {
+	return func(service, region string, options ...interface{}) (aws.Endpoint, error) {
 		if endpoint == "" {
 			return aws.Endpoint{}, &aws.EndpointNotFoundError{}
 		}
 
-		if service == ec2.ServiceID && region == "shoes-aws-testing-region" {
+		//if service == ec2.ServiceID && region == "shoes-aws-testing-region" {
+		if strings.Contains(endpoint, "localhost") {
 			return aws.Endpoint{
 				PartitionID:   "aws",
 				URL:           endpoint,
-				SigningRegion: "shoes-aws-testing-region",
+				SigningRegion: "us-east-1",
 			}, nil
 		}
 
 		return aws.Endpoint{}, &aws.EndpointNotFoundError{}
-	})
+	}
 }
