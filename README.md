@@ -1,5 +1,7 @@
 # shoes-aws: shoes provider for [Amazon Web Services](https://aws.amazon.com)
 
+shoes-aws is [myshoes](https://github.com/whywaita/myshoes) provider
+
 ## Setup
 
 Please set environment values.
