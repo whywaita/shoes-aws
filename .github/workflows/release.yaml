@@ -1,0 +1,60 @@
+name: Release binary
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.x
+      - name: release binaries
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+
+          export CGO_ENABLED=0
+          declare -a os=("darwin" "linux" "windows")
+          declare -a arch=("amd64" "arm64")
+          mkdir -p _output
+
+          SAVEIFS=$IFS
+          IFS=$'\n'
+          shoes_names=($(ls | grep shoes | tr -d '/'))
+          IFS=$SAVEIFS
+
+          for shoes in ${shoes_names[@]}; do
+            cd ${shoes}
+
+            for o in ${os[@]}; do
+              for a in ${arch[@]}; do
+                filename=""
+                if [ ${o} = "windows" ]; then
+                  filename=${shoes}-${o}-${a}.exe
+                else
+                  filename=${shoes}-${o}-${a}
+                fi
+
+
+                GOOS=${o} GOARCH=${a} go build -o ../_output/${filename} . &
+              done
+            done
+
+            cd ../
+          done
+
+          wait
+
+          GO111MODULE=off GOBIN=$(pwd)/bin go get github.com/tcnksm/ghr
+          TAG_NAME=${GITHUB_REF##*/}
+
+          bin/ghr -replace -draft ${TAG_NAME} _output
