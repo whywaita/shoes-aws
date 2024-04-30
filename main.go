@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -119,7 +120,7 @@ func (a AWS) generateInput(script string, rt pb.ResourceType, labels []string) *
 		MinCount:     &instanceCount,
 		ImageId:      aws.String(imageId),
 		InstanceType: types.InstanceType(a.resourceMapping[rt]),
-		UserData:     aws.String(script),
+		UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(script))),
 	}
 }
 
