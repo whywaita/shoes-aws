@@ -6,6 +6,15 @@ shoes-aws is [myshoes](https://github.com/whywaita/myshoes) provider
 
 Please set environment values.
 
+This project uses LocalStack which mocks AWS services
+
+LocalStack has requirements about Auth - https://docs.localstack.cloud/references/credentials/
+- specifically, `test` is a good option for the environment of running test
+  > AWS_ACCESS_KEY_ID=test
+  >
+  > AWS_SECRET_ACCESS_KEY=DOESNOTMATTER
+
+
 ### Required
 
 - `AWS_RESOURCE_TYPE_MAPPING`
