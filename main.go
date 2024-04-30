@@ -27,7 +27,8 @@ const (
 	EnvAWSImageID             = "AWS_IMAGE_ID"
 	EnvAWSResourceTypeMapping = "AWS_RESOURCE_TYPE_MAPPING"
 
-	DefaultImageID = "ami-02868af3c3df4b3aa" // us-west-2 focal 20.04 LTS amd64 hvm:ebs-ssd
+	DefaultImageID      = "ami-02868af3c3df4b3aa" // us-west-2 focal 20.04 LTS amd64 hvm:ebs-ssd
+	ShoesLabelAmiPrefix = "shoesami:"
 )
 
 func main() {
@@ -100,13 +101,23 @@ type AWS struct {
 	resourceMapping map[pb.ResourceType]string
 }
 
-func (a AWS) generateInput(script string, rt pb.ResourceType) *ec2.RunInstancesInput {
+func (a AWS) generateInput(script string, rt pb.ResourceType, labels []string) *ec2.RunInstancesInput {
 	instanceCount := int32(1)
 
+	imageId := a.imageID
+
+	for _, l := range labels {
+		values := strings.Split(l, ShoesLabelAmiPrefix)
+		if len(values) > 1 {
+			imageId = values[1]
+			break
+		}
+	}
+	fmt.Printf("AMI used: %v\n", imageId)
 	return &ec2.RunInstancesInput{
 		MaxCount:     &instanceCount,
 		MinCount:     &instanceCount,
-		ImageId:      aws.String(a.imageID),
+		ImageId:      aws.String(imageId),
 		InstanceType: types.InstanceType(a.resourceMapping[rt]),
 		UserData:     aws.String(script),
 	}
@@ -114,7 +125,7 @@ func (a AWS) generateInput(script string, rt pb.ResourceType) *ec2.RunInstancesI
 
 // AddInstance create an instance from AWS
 func (a AWS) AddInstance(ctx context.Context, req *pb.AddInstanceRequest) (*pb.AddInstanceResponse, error) {
-	instanceID, ip, err := a.createRunnerInstance(ctx, req.RunnerName, req.SetupScript, req.ResourceType)
+	instanceID, ip, err := a.createRunnerInstance(ctx, req.RunnerName, req.SetupScript, req.ResourceType, req.Labels)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create a runner instance: %+v", err)
 	}
@@ -126,8 +137,8 @@ func (a AWS) AddInstance(ctx context.Context, req *pb.AddInstanceRequest) (*pb.A
 	}, nil
 }
 
-func (a AWS) createRunnerInstance(ctx context.Context, runnerName, script string, resourceType pb.ResourceType) (string, string, error) {
-	input := a.generateInput(script, resourceType)
+func (a AWS) createRunnerInstance(ctx context.Context, runnerName, script string, resourceType pb.ResourceType, labels []string) (string, string, error) {
+	input := a.generateInput(script, resourceType, labels)
 
 	result, err := a.client.RunInstances(ctx, input)
 	if err != nil {

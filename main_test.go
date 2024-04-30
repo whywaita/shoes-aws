@@ -22,7 +22,7 @@ func Test_createRunnerInstance(t *testing.T) {
 		t.Fatalf("failed to newServer: %+v", err)
 	}
 
-	if _, _, err := a.createRunnerInstance(ctx, "test-runner", "echo 0", pb.ResourceType_Nano); err != nil {
+	if _, _, err := a.createRunnerInstance(ctx, "test-runner", "echo 0", pb.ResourceType_Nano, []string{"label", ShoesLabelAmiPrefix + "ami-test"}); err != nil {
 		t.Fatalf("failed to createRunnerInstance: %+v", err)
 	}
 }
@@ -36,7 +36,7 @@ func Test_deleteRunnerInstance(t *testing.T) {
 		t.Fatalf("failed to newServer: %+v", err)
 	}
 
-	instanceID, _, err := a.createRunnerInstance(ctx, "test-runner", "echo 0", pb.ResourceType_Nano)
+	instanceID, _, err := a.createRunnerInstance(ctx, "test-runner", "echo 0", pb.ResourceType_Nano, []string{"label"})
 	if err != nil {
 		t.Fatalf("failed to createRunnerInstance: %+v", err)
 	}
