@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/whywaita/myshoes-providers/shoes-aws/testutils"
-	pb "github.com/whywaita/myshoes/api/proto"
+	pb "github.com/whywaita/myshoes/api/proto.go"
 )
 
 func TestMain(m *testing.M) {

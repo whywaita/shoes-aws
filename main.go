@@ -17,7 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	"github.com/hashicorp/go-plugin"
-	pb "github.com/whywaita/myshoes/api/proto"
+	pb "github.com/whywaita/myshoes/api/proto.go"
 	"github.com/whywaita/myshoes/pkg/datastore"
 	"google.golang.org/grpc"
 )
