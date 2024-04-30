@@ -2,6 +2,15 @@
 
 shoes-aws is [myshoes](https://github.com/whywaita/myshoes) provider
 
+## GitHub Workflow Labels
+Labels from your workflow are passed through into shoes-aws. You will need to provide custom code to use those labels for your specific use cases. 
+
+### AMI Label
+There is a dedicated myshoes label prefix for dynamically passing the AMI you want a workflow to use: `shoesami:`
+This label value will take precedence over the env var value. 
+
+For instance, `shoesami:ami-0000000` would result in `ami-0000000` as the AMI of an EC2 instance.
+
 ## Setup
 
 Please set environment values.
