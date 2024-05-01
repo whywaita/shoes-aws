@@ -111,9 +111,8 @@ func (a AWS) generateInput(script string, rt pb.ResourceType, labels []string) *
 	imageId := a.imageID
 
 	for _, l := range labels {
-		values := strings.Split(l, a.shoesLabelAmiPrefix)
-		if len(values) > 1 {
-			imageId = values[1]
+		if strings.HasPrefix(l, a.shoesLabelAmiPrefix) {
+			imageId = strings.TrimPrefix(l, a.shoesLabelAmiPrefix)
 			break
 		}
 	}
