@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,7 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	"github.com/hashicorp/go-plugin"
-	pb "github.com/whywaita/myshoes/api/proto"
+	pb "github.com/whywaita/myshoes/api/proto.go"
 	"github.com/whywaita/myshoes/pkg/datastore"
 	"google.golang.org/grpc"
 )
@@ -26,8 +27,10 @@ import (
 const (
 	EnvAWSImageID             = "AWS_IMAGE_ID"
 	EnvAWSResourceTypeMapping = "AWS_RESOURCE_TYPE_MAPPING"
+	EnvShoesLabelAmiPrefix    = "SHOES_LABEL_AMI_PREFIX"
 
-	DefaultImageID = "ami-02868af3c3df4b3aa" // us-west-2 focal 20.04 LTS amd64 hvm:ebs-ssd
+	DefaultImageID             = "ami-02868af3c3df4b3aa" // us-west-2 focal 20.04 LTS amd64 hvm:ebs-ssd
+	DefaultShoesLabelAmiPrefix = "shoesami:"
 )
 
 func main() {
@@ -72,15 +75,16 @@ func newServer(ctx context.Context, endpoint string) (*AWS, error) {
 	}
 	service := ec2.NewFromConfig(cfg)
 
-	imageID, mapping, err := loadConfig()
+	imageID, mapping, amiLabelPrefix, err := loadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	server := &AWS{
-		client:          service,
-		imageID:         imageID,
-		resourceMapping: mapping,
+		client:              service,
+		imageID:             imageID,
+		resourceMapping:     mapping,
+		shoesLabelAmiPrefix: amiLabelPrefix,
 	}
 
 	return server, nil
@@ -95,26 +99,36 @@ func (p *AWSPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c
 type AWS struct {
 	pb.UnimplementedShoesServer
 
-	client          *ec2.Client
-	imageID         string
-	resourceMapping map[pb.ResourceType]string
+	client              *ec2.Client
+	imageID             string
+	resourceMapping     map[pb.ResourceType]string
+	shoesLabelAmiPrefix string
 }
 
-func (a AWS) generateInput(script string, rt pb.ResourceType) *ec2.RunInstancesInput {
+func (a AWS) generateInput(script string, rt pb.ResourceType, labels []string) *ec2.RunInstancesInput {
 	instanceCount := int32(1)
 
+	imageId := a.imageID
+
+	for _, l := range labels {
+		if strings.HasPrefix(l, a.shoesLabelAmiPrefix) {
+			imageId = strings.TrimPrefix(l, a.shoesLabelAmiPrefix)
+			break
+		}
+	}
+	fmt.Printf("AMI used: %v\n", imageId)
 	return &ec2.RunInstancesInput{
 		MaxCount:     &instanceCount,
 		MinCount:     &instanceCount,
-		ImageId:      aws.String(a.imageID),
+		ImageId:      aws.String(imageId),
 		InstanceType: types.InstanceType(a.resourceMapping[rt]),
-		UserData:     aws.String(script),
+		UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(script))),
 	}
 }
 
 // AddInstance create an instance from AWS
 func (a AWS) AddInstance(ctx context.Context, req *pb.AddInstanceRequest) (*pb.AddInstanceResponse, error) {
-	instanceID, ip, err := a.createRunnerInstance(ctx, req.RunnerName, req.SetupScript, req.ResourceType)
+	instanceID, ip, err := a.createRunnerInstance(ctx, req.RunnerName, req.SetupScript, req.ResourceType, req.Labels)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create a runner instance: %+v", err)
 	}
@@ -126,8 +140,8 @@ func (a AWS) AddInstance(ctx context.Context, req *pb.AddInstanceRequest) (*pb.A
 	}, nil
 }
 
-func (a AWS) createRunnerInstance(ctx context.Context, runnerName, script string, resourceType pb.ResourceType) (string, string, error) {
-	input := a.generateInput(script, resourceType)
+func (a AWS) createRunnerInstance(ctx context.Context, runnerName, script string, resourceType pb.ResourceType, labels []string) (string, string, error) {
+	input := a.generateInput(script, resourceType, labels)
 
 	result, err := a.client.RunInstances(ctx, input)
 	if err != nil {
@@ -183,24 +197,31 @@ func (a AWS) deleteRunnerInstance(ctx context.Context, instanceID string) error 
 	return nil
 }
 
-func loadConfig() (string, map[pb.ResourceType]string, error) {
+func loadConfig() (string, map[pb.ResourceType]string, string, error) {
 	var imageID string
+	var amiLabelPrefix string
 	if os.Getenv(EnvAWSImageID) != "" {
 		imageID = os.Getenv(EnvAWSImageID)
 	} else {
 		imageID = DefaultImageID
 	}
 
+	if os.Getenv(EnvShoesLabelAmiPrefix) != "" {
+		amiLabelPrefix = os.Getenv(EnvShoesLabelAmiPrefix)
+	} else {
+		amiLabelPrefix = DefaultShoesLabelAmiPrefix
+	}
+
 	if os.Getenv(EnvAWSResourceTypeMapping) == "" {
-		return "", nil, fmt.Errorf("must be set %s", EnvAWSResourceTypeMapping)
+		return "", nil, "", fmt.Errorf("must be set %s", EnvAWSResourceTypeMapping)
 	}
 
 	m, err := readResourceTypeMapping(os.Getenv(EnvAWSResourceTypeMapping))
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to read %s: %w", EnvAWSResourceTypeMapping, err)
+		return "", nil, "", fmt.Errorf("failed to read %s: %w", EnvAWSResourceTypeMapping, err)
 	}
 
-	return imageID, m, nil
+	return imageID, m, amiLabelPrefix, nil
 }
 
 func readResourceTypeMapping(env string) (map[pb.ResourceType]string, error) {
