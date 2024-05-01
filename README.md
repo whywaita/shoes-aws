@@ -15,10 +15,11 @@ For instance, `shoesami:ami-0000000` would result in `ami-0000000` as the AMI of
 
 Please set environment values.
 
+### For Testing
 This project uses LocalStack which mocks AWS services
 
 LocalStack has requirements about Auth - https://docs.localstack.cloud/references/credentials/
-- specifically, `test` is a good option for the environment of running test
+- specifically, `test` is a good option for the access key id when running unit tests
   > AWS_ACCESS_KEY_ID=test
   >
   > AWS_SECRET_ACCESS_KEY=DOESNOTMATTER
