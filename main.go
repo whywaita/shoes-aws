@@ -27,9 +27,10 @@ import (
 const (
 	EnvAWSImageID             = "AWS_IMAGE_ID"
 	EnvAWSResourceTypeMapping = "AWS_RESOURCE_TYPE_MAPPING"
+	EnvShoesLabelAmiPrefix    = "SHOES_LABEL_AMI_PREFIX"
 
-	DefaultImageID      = "ami-02868af3c3df4b3aa" // us-west-2 focal 20.04 LTS amd64 hvm:ebs-ssd
-	ShoesLabelAmiPrefix = "shoesami:"
+	DefaultImageID             = "ami-02868af3c3df4b3aa" // us-west-2 focal 20.04 LTS amd64 hvm:ebs-ssd
+	DefaultShoesLabelAmiPrefix = "shoesami:"
 )
 
 func main() {
@@ -74,15 +75,16 @@ func newServer(ctx context.Context, endpoint string) (*AWS, error) {
 	}
 	service := ec2.NewFromConfig(cfg)
 
-	imageID, mapping, err := loadConfig()
+	imageID, mapping, amiLabelPrefix, err := loadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	server := &AWS{
-		client:          service,
-		imageID:         imageID,
-		resourceMapping: mapping,
+		client:              service,
+		imageID:             imageID,
+		resourceMapping:     mapping,
+		shoesLabelAmiPrefix: amiLabelPrefix,
 	}
 
 	return server, nil
@@ -97,9 +99,10 @@ func (p *AWSPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c
 type AWS struct {
 	pb.UnimplementedShoesServer
 
-	client          *ec2.Client
-	imageID         string
-	resourceMapping map[pb.ResourceType]string
+	client              *ec2.Client
+	imageID             string
+	resourceMapping     map[pb.ResourceType]string
+	shoesLabelAmiPrefix string
 }
 
 func (a AWS) generateInput(script string, rt pb.ResourceType, labels []string) *ec2.RunInstancesInput {
@@ -108,7 +111,7 @@ func (a AWS) generateInput(script string, rt pb.ResourceType, labels []string) *
 	imageId := a.imageID
 
 	for _, l := range labels {
-		values := strings.Split(l, ShoesLabelAmiPrefix)
+		values := strings.Split(l, a.shoesLabelAmiPrefix)
 		if len(values) > 1 {
 			imageId = values[1]
 			break
@@ -195,24 +198,31 @@ func (a AWS) deleteRunnerInstance(ctx context.Context, instanceID string) error 
 	return nil
 }
 
-func loadConfig() (string, map[pb.ResourceType]string, error) {
+func loadConfig() (string, map[pb.ResourceType]string, string, error) {
 	var imageID string
+	var amiLabelPrefix string
 	if os.Getenv(EnvAWSImageID) != "" {
 		imageID = os.Getenv(EnvAWSImageID)
 	} else {
 		imageID = DefaultImageID
 	}
 
+	if os.Getenv(EnvShoesLabelAmiPrefix) != "" {
+		amiLabelPrefix = os.Getenv(EnvShoesLabelAmiPrefix)
+	} else {
+		amiLabelPrefix = DefaultShoesLabelAmiPrefix
+	}
+
 	if os.Getenv(EnvAWSResourceTypeMapping) == "" {
-		return "", nil, fmt.Errorf("must be set %s", EnvAWSResourceTypeMapping)
+		return "", nil, "", fmt.Errorf("must be set %s", EnvAWSResourceTypeMapping)
 	}
 
 	m, err := readResourceTypeMapping(os.Getenv(EnvAWSResourceTypeMapping))
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to read %s: %w", EnvAWSResourceTypeMapping, err)
+		return "", nil, "", fmt.Errorf("failed to read %s: %w", EnvAWSResourceTypeMapping, err)
 	}
 
-	return imageID, m, nil
+	return imageID, m, amiLabelPrefix, nil
 }
 
 func readResourceTypeMapping(env string) (map[pb.ResourceType]string, error) {
